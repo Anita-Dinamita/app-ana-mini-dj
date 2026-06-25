@@ -328,9 +328,45 @@ RAW.traktor.forEach(t=>POOL.push({src:'traktor',title:t.title,artist:t.artist,bp
 RAW.spotify.forEach(s=>POOL.push({src:'spotify',title:s.song,artist:s.artist,bpm:s.bpm,camelot:s.camelot,
   energy:s.energy,year:s.year,genre:'',genres:s.genres,inOther:s.inTraktor,key:s.tkey||null}));
 
+/* ---------- dedup into unique songs (collapse repeats from Traktor re-downloads
+   and songs present in both Spotify & Traktor) ---------- */
+const uniqKey = r =>
+  strip(r.title).replace(/\[[^\]]*\]/g,' ').replace(/\([^)]*\)/g,' ')
+    .replace(/_spotdown\.org|spotdownloader\.com|spotdown/g,' ')
+    .replace(/\bfeat\b.*$|\bft\b.*$/g,' ').replace(/[^a-z0-9]+/g,' ').trim()
+  + '|' + strip((r.artist||'').split(/[,/&]| feat | ft /)[0]).replace(/[^a-z0-9]+/g,' ').trim();
+const UNIQ = [];
+(function(){
+  const idx = new Map();
+  POOL.forEach(r=>{
+    const k = uniqKey(r);
+    let u = idx.get(k);
+    if(!u){
+      u = {src:r.src,title:r.title,artist:r.artist,bpm:r.bpm,camelot:r.camelot,energy:r.energy,
+           year:r.year,genre:r.genre,genres:r.genres,key:r.key,vol:r.vol,dir:r.dir,file:r.file,
+           inTk:false,inSp:false,copies:0};
+      idx.set(k,u); UNIQ.push(u);
+    } else {
+      // prefer the Traktor copy as representative (carries file path for .nml export)
+      if(u.src!=='traktor' && r.src==='traktor'){ u.src='traktor'; u.title=r.title; u.artist=r.artist; }
+      if(u.bpm==null) u.bpm=r.bpm;
+      if(!u.camelot) u.camelot=r.camelot;
+      if(u.energy==null) u.energy=r.energy;
+      if(u.year==null) u.year=r.year;
+      if(!u.genre) u.genre=r.genre;
+      if(!u.genres) u.genres=r.genres;
+      if(!u.key){ u.key=r.key; u.vol=r.vol; u.dir=r.dir; u.file=r.file; }
+    }
+    if(r.src==='traktor') u.inTk=true; else u.inSp=true;
+    u.copies++;
+  });
+})();
+const srcLabel = r => (r.inTk&&r.inSp)?'AMBOS':(r.inTk||r.src==='traktor')?'TRAKTOR':'SPOTIFY';
+const srcClass = r => (r.inTk||r.src==='traktor')?'tk':'sp';
+
 /* genre catalogue (merged, accent-insensitive) */
 const genreMap = {};
-POOL.forEach(r=>genreTokens(r).forEach(g=>{
+UNIQ.forEach(r=>genreTokens(r).forEach(g=>{
   const k = strip(g); if(!k) return;
   if(!genreMap[k]) genreMap[k]={label:titleCase(g),count:0,key:k};
   genreMap[k].count++;
@@ -437,8 +473,9 @@ function compatible(a,b){ if(!a||!b) return false;
 let currentSession=[], currentName='Sesión';
 function filterPool(){
   const bLo=+bpmMin.value,bHi=+bpmMax.value,eLo=+enMin.value,eHi=+enMax.value,yLo=+yrMin.value,yHi=+yrMax.value;
-  return POOL.filter(r=>{
-    if(srcSel!=='all' && r.src!==srcSel) return false;
+  return UNIQ.filter(r=>{
+    if(srcSel==='traktor' && !r.inTk) return false;
+    if(srcSel==='spotify' && !r.inSp) return false;
     if(onlyKey.checked && !r.camelot) return false;
     if(selGenres.size){ const gt=genreTokens(r).map(strip); if(!gt.some(g=>selGenres.has(g))) return false; }
     if(r.bpm!=null){ if(r.bpm<bLo||r.bpm>bHi) return false; } else if(bLo>0||bHi<220){ if(onlyKey.checked) return false; }
@@ -509,7 +546,7 @@ function renderSession(){
         ${t.bpm!=null?`<span class="pill bpm">${t.bpm} BPM</span>`:''}
         ${t.camelot?`<span class="pill key">${t.camelot}</span>`:''}
         ${t.energy!=null?`<span class="pill en">⚡${t.energy}</span>`:''}
-        <span class="src ${t.src==='traktor'?'tk':'sp'}">${t.src==='traktor'?'TRAKTOR':'SPOTIFY'}</span>
+        <span class="src ${srcClass(t)}">${srcLabel(t)}</span>
       </div>`;
     tc.appendChild(el);
   });
@@ -631,16 +668,19 @@ document.querySelectorAll('#lFilter button').forEach(b=>b.onclick=()=>{
 lSearch.oninput=renderLib; lSort.onchange=renderLib;
 function renderLib(){
   const q=strip(lSearch.value);
-  let list=POOL.filter(r=>{ if(lf!=='all'&&r.src!==lf) return false;
+  let list=UNIQ.filter(r=>{
+    if(lf==='traktor'&&!r.inTk) return false;
+    if(lf==='spotify'&&!r.inSp) return false;
     if(q && !strip(r.title+' '+(r.artist||'')).includes(q)) return false; return true;});
   const s=lSort.value;
   list=[...list].sort((a,b)=> s==='bpm'?(b.bpm||0)-(a.bpm||0): s==='year'?(b.year||0)-(a.year||0):
      strip((s==='artist'?a.artist:a.title)||'').localeCompare(strip((s==='artist'?b.artist:b.title)||'')));
-  lCount.textContent=list.length+' canciones';
+  const hidden = (lf==='all'&&!q) ? (POOL.length - UNIQ.length) : 0;
+  lCount.textContent = list.length+' canciones'+(hidden?` · ${hidden} duplicados unificados`:'');
   lList.innerHTML=list.slice(0,600).map(r=>`<div class="xrow">
      <div><div class="ti">${esc(r.title)}</div><div class="ar">${esc(r.artist||'—')}${r.genre?' · '+esc(r.genre):''}</div></div>
      <div>${r.bpm!=null?`<span class="pill bpm">${r.bpm} BPM</span>`:''} ${r.camelot?`<span class="pill key">${r.camelot}</span>`:''} ${r.year?`<span class="pill">${r.year}</span>`:''}</div>
-     <div><span class="src ${r.src==='traktor'?'tk':'sp'}">${r.src==='traktor'?'TRAKTOR':'SPOTIFY'}</span></div>
+     <div><span class="src ${srcClass(r)}">${srcLabel(r)}</span></div>
    </div>`).join('');
   if(list.length>600) lList.innerHTML+=`<div class="count" style="padding:14px 4px">Mostrando las primeras 600 · afina con el buscador</div>`;
 }
