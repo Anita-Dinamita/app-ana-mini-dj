@@ -194,6 +194,7 @@ footer{border-top:1px solid var(--line);padding:22px 0;text-align:center;color:v
       <button class="on" data-v="build">Crear sesión</button>
       <button data-v="cross">Spotify ✕ Traktor</button>
       <button data-v="lib">Biblioteca</button>
+      <button data-v="peticiones">🎤 Peticiones <span id="reqBadge" style="display:none;background:var(--magenta);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px;font-weight:700"></span></button>
     </nav>
   </div>
 </header>
@@ -311,6 +312,17 @@ footer{border-top:1px solid var(--line);padding:22px 0;text-align:center;color:v
       <span class="count" id="lCount"></span>
     </div>
     <div id="lList"></div>
+  </section>
+
+  <!-- PETICIONES (panel DJ) -->
+  <section class="view" id="v-peticiones">
+    <div class="toolbar" style="align-items:center">
+      <h2 style="font-family:var(--disp);font-size:20px;margin:0">🎤 Peticiones del público</h2>
+      <span class="count" id="reqCount">0 pendientes</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer"><input type="checkbox" id="reqSound" checked> 🔔 Aviso sonoro</label>
+      <button id="reqClear" style="margin-left:auto;font-family:var(--body);font-weight:600;font-size:13px;padding:9px 14px;border-radius:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);color:var(--ink)">Vaciar atendidas</button>
+    </div>
+    <div id="reqList"></div>
   </section>
 </main>
 
@@ -703,6 +715,77 @@ function renderLib(){
    </div>`).join('');
   if(list.length>600) lList.innerHTML+=`<div class="count" style="padding:14px 4px">Mostrando las primeras 600 · afina con el buscador</div>`;
 }
+</script>
+
+<!-- Botón flotante para pedir canción (público) -->
+<button id="reqOpen" style="position:fixed;right:18px;bottom:18px;z-index:150;background:var(--magenta);color:#fff;border:none;border-radius:999px;padding:14px 20px;font-family:var(--body);font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 8px 30px rgba(255,46,63,.45)">🎤 Pedir canción</button>
+
+<!-- Modal del formulario de petición -->
+<div id="reqModal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.65);align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;max-width:430px;width:100%;padding:24px">
+    <h3 style="font-family:var(--disp);font-size:22px;margin:0 0 4px">🎤 Pide tu canción</h3>
+    <p style="color:var(--muted);font-size:13px;margin:0 0 16px">Dile a Ana qué quieres escuchar</p>
+    <input id="reqSong" maxlength="120" placeholder="Canción y artista *" style="width:100%;margin-bottom:10px;padding:12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);font-family:var(--body);font-size:15px">
+    <input id="reqName" maxlength="40" placeholder="Tu nombre (opcional)" style="width:100%;margin-bottom:10px;padding:12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);font-family:var(--body);font-size:15px">
+    <input id="reqMsg" maxlength="120" placeholder="Dedicatoria / mensaje (opcional)" style="width:100%;padding:12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);font-family:var(--body);font-size:15px">
+    <div id="reqOk" style="display:none;margin-top:14px;color:var(--green);font-weight:700;text-align:center">¡Petición enviada! 🎉 Gracias</div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button id="reqCancel" style="flex:1;padding:12px;border-radius:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);color:var(--ink);font-family:var(--body);font-weight:600">Cancelar</button>
+      <button id="reqSend" style="flex:2;padding:12px;border-radius:10px;cursor:pointer;background:var(--magenta);border:none;color:#fff;font-family:var(--body);font-weight:800">Enviar petición</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+(function(){
+  const cfg={apiKey:"AIzaSyBpvSiO4rPg48_BpH6qmAu6bgNbDiHHICY",authDomain:"mini-dj-e09fe.firebaseapp.com",databaseURL:"https://mini-dj-e09fe-default-rtdb.europe-west1.firebasedatabase.app",projectId:"mini-dj-e09fe",storageBucket:"mini-dj-e09fe.firebasestorage.app",messagingSenderId:"759806179530",appId:"1:759806179530:web:8d4e381b0181675b2b1c33"};
+  firebase.initializeApp(cfg);
+  const ref=firebase.database().ref('peticiones');
+  const esq=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const $=id=>document.getElementById(id);
+
+  // ---- formulario público ----
+  const modal=$('reqModal');
+  $('reqOpen').onclick=()=>{modal.style.display='flex';$('reqSong').focus();};
+  $('reqCancel').onclick=()=>{modal.style.display='none';};
+  modal.onclick=e=>{if(e.target===modal)modal.style.display='none';};
+  $('reqSend').onclick=()=>{
+    const cancion=$('reqSong').value.trim(); if(!cancion){$('reqSong').focus();return;}
+    ref.push({cancion,nombre:$('reqName').value.trim()||'Anónimo',mensaje:$('reqMsg').value.trim(),ts:Date.now(),hecha:false});
+    $('reqSong').value='';$('reqName').value='';$('reqMsg').value='';
+    $('reqOk').style.display='block';
+    setTimeout(()=>{$('reqOk').style.display='none';modal.style.display='none';},1600);
+  };
+
+  // ---- panel DJ en tiempo real ----
+  let ready=false, items={}, unseen=0;
+  const badge=$('reqBadge');
+  function beep(){ if(!$('reqSound').checked)return; try{const a=new (window.AudioContext||window.webkitAudioContext)();const o=a.createOscillator(),g=a.createGain();o.connect(g);g.connect(a.destination);o.type='sine';o.frequency.value=880;g.gain.setValueAtTime(.0001,a.currentTime);g.gain.exponentialRampToValueAtTime(.35,a.currentTime+.03);g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+.6);o.start();o.stop(a.currentTime+.6);}catch(e){} }
+  function toast(v){const t=document.createElement('div');t.innerHTML='🎤 <b>'+esq(v.cancion)+'</b> — '+esq(v.nombre);t.style.cssText='position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:300;background:var(--magenta);color:#fff;padding:12px 20px;border-radius:12px;font-family:var(--body);box-shadow:0 8px 30px rgba(0,0,0,.45);max-width:90vw';document.body.appendChild(t);setTimeout(()=>t.remove(),4500);}
+  function notify(v){try{if('Notification'in window&&Notification.permission==='granted')new Notification('🎤 Nueva petición',{body:v.cancion+' — '+v.nombre});}catch(e){}}
+  function render(){
+    const arr=Object.entries(items).map(([k,v])=>({k,...v})).sort((a,b)=>(b.ts||0)-(a.ts||0));
+    const pend=arr.filter(x=>!x.hecha).length;
+    $('reqCount').textContent=pend+' pendientes';
+    $('reqList').innerHTML = arr.length ? arr.map(x=>`<div class="xrow" style="${x.hecha?'opacity:.4':''}">
+       <div><div class="ti">${esq(x.cancion)}</div><div class="ar">${esq(x.nombre||'Anónimo')}${x.mensaje?' · «'+esq(x.mensaje)+'»':''} · ${x.ts?new Date(x.ts).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</div></div>
+       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${x.hecha?'<span class="src">✓ hecha</span>':`<button data-done="${x.k}" style="cursor:pointer;border:none;border-radius:9px;padding:7px 12px;background:var(--green);color:#04210f;font-weight:700;font-family:var(--body)">✓ Hecha</button>`}<button data-del="${x.k}" style="cursor:pointer;border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--panel2);color:var(--muted);font-family:var(--body)">🗑</button></div>
+     </div>`).join('') : '<div class="empty">Aún no hay peticiones. Comparte la app con el público y pulsarán «Pedir canción».</div>';
+    $('reqList').querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>ref.child(b.dataset.done).update({hecha:true}));
+    $('reqList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>ref.child(b.dataset.del).remove());
+  }
+  ref.on('child_added',s=>{items[s.key]=s.val(); if(ready&&!s.val().hecha){unseen++;badge.textContent=unseen;badge.style.display='inline-block';beep();toast(s.val());notify(s.val());} render();});
+  ref.on('child_changed',s=>{items[s.key]=s.val();render();});
+  ref.on('child_removed',s=>{delete items[s.key];render();});
+  ref.once('value',()=>{ready=true;});
+  $('reqClear').onclick=()=>{Object.entries(items).forEach(([k,v])=>{if(v.hecha)ref.child(k).remove();});};
+
+  // al abrir la pestaña Peticiones: limpiar badge + pedir permiso de notificaciones
+  const ptab=document.querySelector('nav.tabs button[data-v="peticiones"]');
+  if(ptab){ ptab.addEventListener('click',()=>{unseen=0;badge.textContent='';badge.style.display='none'; try{if('Notification'in window&&Notification.permission==='default')Notification.requestPermission();}catch(e){}}); }
+})();
 </script>
 </body>
 </html>
