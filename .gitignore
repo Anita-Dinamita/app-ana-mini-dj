@@ -1,2 +1,7 @@
-.vercel
-.env*
+# Datos personales y temporales (no publicar)
+Casa Rural 2026.csv
+Guia_Sesiones_DJ_Ana.txt
+Traktor/
+*.bak-*
+*.nml
+0
