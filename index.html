@@ -671,7 +671,7 @@ xExport.onclick=()=>{
 };
 xTxt.onclick=()=>{
   const miss=RAW.spotify.filter(s=>!s.inTraktor);
-  const fmt=s=>{const e=[s.bpm?s.bpm+' BPM':'',s.camelot||'',s.year||''].filter(Boolean).join(' · ');return `${s.artist} - ${s.song}${e?'  ·  '+e:''}`;};
+  const fmt=s=>{const e=[s.bpm?s.bpm+' BPM':'',s.camelot||'',s.year||''].filter(Boolean).join(' · ');const url='https://open.spotify.com/search/'+encodeURIComponent(s.artist+' '+s.song);return `${s.artist} - ${s.song}${e?'  ·  '+e:''}\n   ${url}`;};
   const noTengo=miss.filter(s=>!s.local), importar=miss.filter(s=>s.local);
   const txt=`CANCIONES QUE ME FALTAN EN TRAKTOR — Ana Mini DJ
 Total: ${miss.length}  (no las tienes: ${noTengo.length} · ya descargadas, solo importar: ${importar.length})
