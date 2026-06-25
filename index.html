@@ -285,6 +285,7 @@ footer{border-top:1px solid var(--line);padding:22px 0;text-align:center;color:v
         <button data-f="all">Todas (Spotify)</button>
       </div>
       <button class="exp" style="display:flex"><button id="xExport" style="font-family:var(--body);font-weight:600;font-size:13px;padding:9px 14px;border-radius:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);color:var(--ink)">Descargar CSV</button></button>
+      <button class="exp" style="display:flex"><button id="xTxt" style="font-family:var(--body);font-weight:700;font-size:13px;padding:9px 14px;border-radius:10px;cursor:pointer;background:var(--magenta);border:1px solid var(--magenta);color:#fff">⬇ TXT (me faltan)</button></button>
       <span class="count" id="xCount"></span>
     </div>
     <div id="xList"></div>
@@ -667,6 +668,17 @@ xExport.onclick=()=>{
   const csv=[head,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='spotify_vs_traktor_'+xf+'.csv';a.click();
+};
+xTxt.onclick=()=>{
+  const list=RAW.spotify.filter(s=>!s.inTraktor);
+  const lines=list.map(s=>{
+    const extra=[s.bpm?s.bpm+' BPM':'', s.camelot||'', s.year||'', s.local?'(ya descargada)':''].filter(Boolean).join(' · ');
+    return `${s.artist} - ${s.song}${extra?'  ·  '+extra:''}`;
+  });
+  const txt=`CANCIONES QUE ME FALTAN EN TRAKTOR (${list.length})\nSpotify ✕ Traktor · Ana Mini DJ\n\n`+lines.join('\n')+'\n';
+  const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='me_faltan_en_traktor.txt';a.click();
+  const b=document.getElementById('xTxt');const o=b.textContent;b.textContent='✓ Descargado';setTimeout(()=>b.textContent=o,1600);
 };
 
 /* ---------- LIBRARY ---------- */
